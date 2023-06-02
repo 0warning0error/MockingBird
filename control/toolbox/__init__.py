@@ -289,6 +289,7 @@ class Toolbox:
                    % (i * b_size, seq_len * b_size, b_size, gen_rate, real_time_factor)
             self.ui.log(line, "overwrite")
             self.ui.set_loading(i, seq_len)
+        print(self.ui.current_vocoder_fpath)
         if self.ui.current_vocoder_fpath is not None:
             self.ui.log("")
             wav, sample_rate = vocoder.infer_waveform(spec, progress_callback=vocoder_progress)

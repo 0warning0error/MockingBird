@@ -88,7 +88,43 @@ def _process_utterance(wav: np.ndarray, text: str, out_dir: Path, basename: str,
 
     # Return a tuple describing this training example
     return wav_fpath.name, mel_fpath.name, "embed-%s.npy" % basename, wav, mel_frames, text
- 
+
+def _process_utterance_nosave(wav: np.ndarray, text: str, hparams, encoder_model_fpath):
+    ## FOR REFERENCE:
+    # For you not to lose your head if you ever wish to change things here or implement your own
+    # synthesizer.
+    # - Both the audios and the mel spectrograms are saved as numpy arrays
+    # - There is no processing done to the audios that will be saved to disk beyond volume  
+    #   normalization (in split_on_silences)
+    # - However, pre-emphasis is applied to the audios before computing the mel spectrogram. This
+    #   is why we re-apply it on the audio on the side of the vocoder.
+    # - Librosa pads the waveform before computing the mel spectrogram. Here, the waveform is saved
+    #   without extra padding. This means that you won't have an exact relation between the length
+    #   of the wav and of the mel spectrogram. See the vocoder data loader.
+        
+
+
+    # Trim silence
+    if hparams.trim_silence:
+        if not encoder.is_loaded():
+            encoder.load_model(encoder_model_fpath)
+        wav = encoder.preprocess_wav(wav, normalize=False, trim_silence=True)
+    
+    # Skip utterances that are too short
+    if len(wav) < hparams.utterance_min_duration * hparams.sample_rate:
+        return None
+    
+    # Compute the mel spectrogram
+    mel_spectrogram = audio.melspectrogram(wav, hparams).astype(np.float32)
+    mel_frames = mel_spectrogram.shape[1]
+    
+    # Skip utterances that are too long
+    if mel_frames > hparams.max_mel_frames and hparams.clip_mels_length:
+        return None
+
+    # Return a tuple describing this training example
+    return  wav, mel_spectrogram.T, text
+
 
 def _split_on_silences(wav_fpath, words, hparams):
     # Load the audio waveform
@@ -108,6 +144,38 @@ def _split_on_silences(wav_fpath, words, hparams):
     res = " ".join(res)
 
     return wav, res
+
+def preprocess_general_npz(speaker_dir, out_dir: Path, skip_existing: bool, hparams, dict_info, no_alignments: bool, encoder_model_fpath: Path):
+    mel_dict = {}
+    wav_dict = {}
+    extensions = (".wav", ".flac", ".mp3")
+    mel_fpath = out_dir.joinpath("mels", f"mel-{speaker_dir.name}.npz")
+    wav_fpath_ = out_dir.joinpath("audio", f"audio-{speaker_dir.name}.npz")    
+    metadata = {speaker_dir.name:[]}        
+    if mel_fpath.exists() and wav_fpath_.exists():
+        return 
+    wav_fpath_list = speaker_dir.glob("*")
+    # Iterate over each wav
+    for wav_fpath in wav_fpath_list:
+        if wav_fpath.is_file() and wav_fpath.suffix in extensions:
+            words = dict_info.get(wav_fpath.name.split(".")[0])
+            if not words:
+                words = dict_info.get(wav_fpath.name) # try with extension 
+                if not words:
+                    print("no wordS")
+                    continue
+            wav, text = _split_on_silences(wav_fpath, words, hparams)
+            result = _process_utterance_nosave(wav, text, hparams, encoder_model_fpath) # accelarate
+            if result is None:
+                continue
+            wav, mel_spectrogram, text = result
+            basename = "%s_%02d" % (wav_fpath.name, 0)
+            mel_dict[basename] = mel_spectrogram
+            wav_dict[basename] = wav
+            metadata[speaker_dir.name].append((basename,len(wav),mel_spectrogram.shape[0],text))
+    np.savez_compressed(wav_fpath_,**wav_dict)
+    np.savez_compressed(mel_fpath,**mel_dict)
+    return metadata
 
 def preprocess_general(speaker_dir, out_dir: Path, skip_existing: bool, hparams, dict_info, no_alignments: bool, encoder_model_fpath: Path):
     metadata = []

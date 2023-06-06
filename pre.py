@@ -1,4 +1,4 @@
-from models.synthesizer.preprocess import create_embeddings, preprocess_dataset, create_emo
+from models.synthesizer.preprocess import create_embeddings, preprocess_dataset, create_emo, preprocess_dataset_new
 from models.synthesizer.hparams import hparams
 from pathlib import Path
 import argparse
@@ -45,6 +45,8 @@ if __name__ == "__main__":
         "this value on GPUs with low memory. Set it to 1 if CUDA is unhappy")
     parser.add_argument("-ee","--emotion_extract", action="store_true", help=\
         "Preprocess audio to extract emotional numpy (for emotional vits).")
+    parser.add_argument("-nm","--new_method", action="store_true", help=\
+        "Save preprocessed data in new methods(not compatible with old methods).")
     args = parser.parse_args()
 
     # Process the arguments
@@ -69,9 +71,12 @@ if __name__ == "__main__":
     args.hparams = hparams.parse(args.hparams)
     n_processes_embed = args.n_processes_embed
     del args.n_processes_embed
-    preprocess_dataset(**vars(args))
-    
-    create_embeddings(synthesizer_root=args.out_dir, n_processes=n_processes_embed, encoder_model_fpath=encoder_model_fpath)
-    
-    if args.emotion_extract:
-        create_emo(synthesizer_root=args.out_dir, n_processes=n_processes_embed, skip_existing=args.skip_existing, hparams=args.hparams)
+    if args.new_method:
+        preprocess_dataset_new(**vars(args))
+    else:
+        preprocess_dataset(**vars(args))
+        
+        create_embeddings(synthesizer_root=args.out_dir, n_processes=n_processes_embed, encoder_model_fpath=encoder_model_fpath)
+        
+        if args.emotion_extract:
+            create_emo(synthesizer_root=args.out_dir, n_processes=n_processes_embed, skip_existing=args.skip_existing, hparams=args.hparams)
